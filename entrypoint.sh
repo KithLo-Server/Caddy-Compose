@@ -20,8 +20,6 @@ write_base_caddyfile() {
 {
     admin off
 }
-
-# Import all dynamically discovered snippets
 import /etc/caddy/snippets/*
 EOF
 }
@@ -100,16 +98,12 @@ reconcile() {
         return 0
     fi
 
-    # 5. Ensure the base Caddyfile is written to import the snippet directory
-    if [ ! -f "$BASE_CADDYFILE" ]; then
-        write_base_caddyfile
-        changed=1
-    fi
-
-    # 6. Ensure Caddy is running (starts only when at least 1 snippet is valid)
+    # 5. Ensure Caddy is running (starts only when at least 1 snippet is valid)
     caddy_just_started=0
     if ! docker ps --format '{{.Names}}' | grep -Eq "^${CADDY_CONTAINER}\$"; then
         echo "[caddy_compose] Starting ${CADDY_CONTAINER} container..."
+        # Ensure the base Caddyfile is written to import the snippet directory
+        write_base_caddyfile
         docker rm -f "$CADDY_CONTAINER" >/dev/null 2>&1 || true
         docker run -d \
             --name "$CADDY_CONTAINER" \
@@ -124,7 +118,7 @@ reconcile() {
         caddy_just_started=1
     fi
 
-    # 7. Wire dedicated networks for valid containers
+    # 6. Wire dedicated networks for valid containers
     active_nets=""
     for cid in $valid_cids; do
         cname=$(docker inspect --format '{{.Name}}' "$cid" | sed 's/^\///')
@@ -149,7 +143,7 @@ reconcile() {
         fi
     done
 
-    # 8. Clean up stale networks (from dead or now-invalid containers)
+    # 7. Clean up stale networks (from dead or now-invalid containers)
     for existing_net in $(docker network ls --filter "name=caddy_net_" --format '{{.Name}}'); do
         case " $active_nets " in
             *" $existing_net "*) ;;
@@ -162,7 +156,7 @@ reconcile() {
         esac
     done
 
-    # 9. Reload Caddy if configuration changed and container was already alive
+    # 8. Reload Caddy if configuration changed and container was already alive
     if [ "$changed" -eq 1 ] && [ "$caddy_just_started" -eq 0 ]; then
         echo "[caddy_compose] Reloading Caddy configuration..."
         docker exec "$CADDY_CONTAINER" caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
