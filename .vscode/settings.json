@@ -1,0 +1,12 @@
+{
+  "files.eol": "\n",
+  "editor.tabSize": 2,
+  "files.associations": {
+    ".env*": "dotenv",
+  },
+  "editor.formatOnSave": true,
+  "search.exclude": {
+    ".vscode": true,
+  },
+  "files.trimTrailingWhitespace": true,
+}
