@@ -21,6 +21,22 @@ import /etc/caddy/snippets/*
 EOF
 }
 
+# Collect the union of 'caddyfile.volumes' labels from the given container IDs.
+# The label is a comma-separated list of "src:dst[:flag]" mount specs. Emits one raw
+# trimmed spec per line (extra whitespace and empty items removed), sorted and de-duplicated.
+collect_volumes() {
+    for cid in $*; do
+        raw=$(docker inspect --format '{{ index .Config.Labels "caddyfile.volumes" }}' "$cid" 2>/dev/null || true)
+        [ -n "$raw" ] || continue
+        # Split on commas; also tolerate spaces around items
+        printf '%s\n' "$raw" | tr ',' '\n' | while IFS= read -r item; do
+            item=$(printf '%s' "$item" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+            [ -n "$item" ] || continue
+            printf '%s\n' "$item"
+        done
+    done | sort -u
+}
+
 reconcile() {
     echo "[caddy_compose] Running reconciliation..."
 
@@ -97,11 +113,47 @@ reconcile() {
 
     # 5. Ensure Caddy is running (starts only when at least 1 snippet is valid)
     caddy_just_started=0
-    if ! docker ps --format '{{.Names}}' | grep -Eq "^${CADDY_CONTAINER}\$"; then
-        echo "[caddy_compose] Starting ${CADDY_CONTAINER} container..."
+    caddy_running=0
+    if docker ps --format '{{.Names}}' | grep -Eq "^${CADDY_CONTAINER}\$"; then
+        caddy_running=1
+    fi
+
+    # Build the desired list of volume mounts for Caddy from all valid containers.
+    # Each entry is a single "src:dst[:flag]" item (raw, as authored in the label).
+    desired_volumes=$(collect_volumes $valid_cids)
+
+    # For change detection, compare canonical "src:dst:ro|rw" keys. Only bind mounts are
+    # tracked (the caddyfile.volumes examples use host paths), which also excludes the
+    # static named-volume mounts below.
+    desired_keys=$(printf '%s\n' "$desired_volumes" | awk -F: 'NF>=2 {c=($NF=="ro")?"ro":"rw"; print $1":"$2":"c}' | sort -u)
+
+    current_keys=""
+    if [ "$caddy_running" -eq 1 ]; then
+        current_keys=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}{{ "\t" }}{{.Destination}}{{ "\t" }}{{.ReadOnly}}{{ "\n" }}{{end}}{{end}}' "$CADDY_CONTAINER" 2>/dev/null \
+            | awk -F'\t' '{c=($3=="true")?"ro":"rw"; print $1":"$2":"c}' | sort -u || true)
+    fi
+
+    # Recreate Caddy if it's not running, or if the desired volumes differ from current.
+    if [ "$caddy_running" -eq 0 ] || [ "$desired_keys" != "$current_keys" ]; then
+        if [ "$caddy_running" -eq 1 ]; then
+            echo "[caddy_compose] Volume mounts changed, rebuilding ${CADDY_CONTAINER} container..."
+        else
+            echo "[caddy_compose] Starting ${CADDY_CONTAINER} container..."
+        fi
+
         # Ensure the base Caddyfile is written to import the snippet directory
         write_base_caddyfile
         docker rm -f "$CADDY_CONTAINER" >/dev/null 2>&1 || true
+
+        # Build positional args of -v flags for each desired volume to avoid quoting issues
+        set --
+        while IFS= read -r mount; do
+            [ -n "$mount" ] || continue
+            set -- "$@" -v "$mount"
+        done <<EOF
+$desired_volumes
+EOF
+
         docker run -d \
             --name "$CADDY_CONTAINER" \
             --restart unless-stopped \
@@ -110,6 +162,7 @@ reconcile() {
             -p 443:443/udp \
             -v caddy_compose_data:/etc/caddy:ro \
             -v ${CADDY_DATA}:/data \
+            "$@" \
             "$CADDY_IMAGE" \
             caddy run --config /etc/caddy/Caddyfile
         caddy_just_started=1
