@@ -178,10 +178,10 @@ docker events --filter 'type=container' \
               --filter 'event=start' \
               --filter 'event=die' \
               --filter 'event=destroy' \
-              --format '{{.Actor.Attributes.name}} {{.Status}}' | while read -r name status; do
+              --format '{{.Actor.Attributes.name}} {{.Action}}' | while read -r name action; do
     if [ "$name" = "$CADDY_CONTAINER" ] || [ "$name" = "caddy_compose" ]; then
         continue
     fi
-    echo "[caddy_compose] Event detected: $name ($status)"
+    echo "[caddy_compose] Event detected: $name ($action)"
     reconcile || true
 done
