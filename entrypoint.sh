@@ -17,9 +17,6 @@ mkdir -p "$SNIPPET_DIR"
 
 write_base_caddyfile() {
     cat <<'EOF' > "$BASE_CADDYFILE"
-{
-    admin off
-}
 import /etc/caddy/snippets/*
 EOF
 }
