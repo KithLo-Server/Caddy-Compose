@@ -129,7 +129,7 @@ reconcile() {
 
         # Attach target container
         if ! docker inspect --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$cid" | grep -qw "$net_name"; then
-            docker network connect --alias "upstream" "$net_name" "$cid"
+            docker network connect --alias "$cname" "$net_name" "$cid"
             echo "[caddy_compose] Connected $cname to $net_name"
         fi
 
