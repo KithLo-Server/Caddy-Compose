@@ -6,6 +6,7 @@ services:
     container_name: caddy_compose
     restart: unless-stopped
     pull_policy: never
+    network_mode: none
     build:
       context: .
     environment:
