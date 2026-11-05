@@ -119,6 +119,16 @@ reconcile() {
     active_nets=""
     for cid in $valid_cids; do
         cname=$(docker inspect --format '{{.Name}}' "$cid" | sed 's/^\///')
+
+        # Skip network wiring when the container opts out
+        net_enabled=$(docker inspect --format '{{ index .Config.Labels "caddyfile.network" }}' "$cid")
+        case "$(printf '%s' "$net_enabled" | tr 'A-Z' 'a-z')" in
+            false|0|no)
+                echo "[caddy_compose] Skipping network for $cname (caddyfile.network=false)"
+                continue
+                ;;
+        esac
+
         net_name="caddy_net_${cname}"
         active_nets="$active_nets $net_name"
 
