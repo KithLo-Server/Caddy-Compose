@@ -197,7 +197,7 @@ EOF
         active_nets="$active_nets $net_name"
 
         if ! docker network inspect "$net_name" >/dev/null 2>&1; then
-            docker network create "$net_name" >/dev/null
+            docker network create --internal "$net_name" >/dev/null
             echo "[caddy_compose] Created network: $net_name"
         fi
 
