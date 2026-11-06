@@ -135,6 +135,7 @@ reconcile() {
 
     # Recreate Caddy if it's not running, or if the desired volumes differ from current.
     if [ "$caddy_running" -eq 0 ] || [ "$desired_keys" != "$current_keys" ]; then
+        echo "Volume keys: expected '$desired_keys', found '$current_keys'"
         if [ "$caddy_running" -eq 1 ]; then
             echo "[caddy_compose] Volume mounts changed, rebuilding ${CADDY_CONTAINER} container..."
         else
