@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, shared]
+    runs-on: self-hosted
     env:
       CADDY_DATA: ${{ vars.CADDY_DATA }}
       CADDY_IMAGE: ${{ vars.CADDY_IMAGE || 'caddy:2-alpine' }}
