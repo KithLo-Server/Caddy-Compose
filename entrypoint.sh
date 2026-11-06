@@ -129,8 +129,7 @@ reconcile() {
 
     current_keys=""
     if [ "$caddy_running" -eq 1 ]; then
-        current_keys=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}{{ "\t" }}{{.Destination}}{{ "\t" }}{{.ReadOnly}}{{ "\n" }}{{end}}{{end}}' "$CADDY_CONTAINER" 2>/dev/null \
-            | awk -F'\t' 'NF>=3 {c=($3=="true")?"ro":"rw"; print $1":"$2":"c}' | sort -u || true)
+        current_keys=$(docker inspect --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}{{ ":" }}{{.Destination}}{{ ":" }}{{.Mode}}{{ "\n" }}{{end}}{{end}}' "$CADDY_CONTAINER" 2>/dev/null | sort -u || true)
     fi
 
     # Recreate Caddy if it's not running, or if the desired volumes differ from current.
