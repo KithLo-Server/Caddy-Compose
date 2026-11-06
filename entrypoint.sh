@@ -37,6 +37,17 @@ collect_volumes() {
     done | sort -u
 }
 
+# Disconnect every container still attached (stopped containers keep their endpoint),
+# then remove the network. Without this, rm fails and a later start tries to join a
+# network that no longer exists.
+remove_network() {
+    net="$1"
+    for cid in $(docker network inspect --format '{{range .Containers}}{{.ID}} {{end}}' "$net" 2>/dev/null || true); do
+        docker network disconnect -f "$net" "$cid" >/dev/null 2>&1 || true
+    done
+    docker network rm "$net" >/dev/null 2>&1 || true
+}
+
 reconcile() {
     echo "[caddy_compose] Running reconciliation..."
 
@@ -94,20 +105,7 @@ reconcile() {
         esac
     done
 
-    # Keep networks whose caddyfile-labeled container still exists (running or stopped).
-    # They are only removed once the container is destroyed.
-    retained_nets=""
-    for cid in $(docker ps -aq --filter "label=caddyfile" 2>/dev/null || true); do
-        cname=$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | sed 's/^\///') || continue
-        [ -n "$cname" ] || continue
-        net_enabled=$(docker inspect --format '{{ index .Config.Labels "caddyfile.network" }}' "$cid" 2>/dev/null || true)
-        case "$(printf '%s' "$net_enabled" | tr 'A-Z' 'a-z')" in
-            false|0|no) continue ;;
-        esac
-        retained_nets="$retained_nets caddy_net_${cname}"
-    done
-
-    # 4. If zero snippets passed validation, tear down Caddy and all unused dynamic networks
+    # 4. If zero snippets passed validation, tear down Caddy and all dynamic networks
     if [ "$valid_count" -eq 0 ]; then
         echo "[caddy_compose] No valid 'caddyfile' configurations active."
 
@@ -117,13 +115,8 @@ reconcile() {
         fi
 
         for net in $(docker network ls --filter "name=caddy_net_" --format '{{.Name}}'); do
-            case " $retained_nets " in
-                *" $net "*) ;;
-                *)
-                    echo "[caddy_compose] Removing network: $net"
-                    docker network rm "$net" >/dev/null 2>&1 || true
-                    ;;
-            esac
+            echo "[caddy_compose] Removing network: $net"
+            remove_network "$net"
         done
 
         return 0
@@ -221,15 +214,13 @@ EOF
         fi
     done
 
-    # 7. Clean up stale networks (from destroyed containers only)
-    keep_nets="$active_nets $retained_nets"
+    # 7. Clean up stale networks (from dead or now-invalid containers)
     for existing_net in $(docker network ls --filter "name=caddy_net_" --format '{{.Name}}'); do
-        case " $keep_nets " in
+        case " $active_nets " in
             *" $existing_net "*) ;;
             *)
                 echo "[caddy_compose] Cleaning up stale network: $existing_net"
-                docker network disconnect -f "$existing_net" "$CADDY_CONTAINER" >/dev/null 2>&1 || true
-                docker network rm "$existing_net" >/dev/null 2>&1 || true
+                remove_network "$existing_net"
                 changed=1
                 ;;
         esac
