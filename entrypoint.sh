@@ -94,7 +94,20 @@ reconcile() {
         esac
     done
 
-    # 4. If zero snippets passed validation, tear down Caddy and all dynamic networks
+    # Keep networks whose caddyfile-labeled container still exists (running or stopped).
+    # They are only removed once the container is destroyed.
+    retained_nets=""
+    for cid in $(docker ps -aq --filter "label=caddyfile" 2>/dev/null || true); do
+        cname=$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | sed 's/^\///') || continue
+        [ -n "$cname" ] || continue
+        net_enabled=$(docker inspect --format '{{ index .Config.Labels "caddyfile.network" }}' "$cid" 2>/dev/null || true)
+        case "$(printf '%s' "$net_enabled" | tr 'A-Z' 'a-z')" in
+            false|0|no) continue ;;
+        esac
+        retained_nets="$retained_nets caddy_net_${cname}"
+    done
+
+    # 4. If zero snippets passed validation, tear down Caddy and all unused dynamic networks
     if [ "$valid_count" -eq 0 ]; then
         echo "[caddy_compose] No valid 'caddyfile' configurations active."
 
@@ -104,8 +117,13 @@ reconcile() {
         fi
 
         for net in $(docker network ls --filter "name=caddy_net_" --format '{{.Name}}'); do
-            echo "[caddy_compose] Removing network: $net"
-            docker network rm "$net" >/dev/null 2>&1 || true
+            case " $retained_nets " in
+                *" $net "*) ;;
+                *)
+                    echo "[caddy_compose] Removing network: $net"
+                    docker network rm "$net" >/dev/null 2>&1 || true
+                    ;;
+            esac
         done
 
         return 0
@@ -203,9 +221,10 @@ EOF
         fi
     done
 
-    # 7. Clean up stale networks (from dead or now-invalid containers)
+    # 7. Clean up stale networks (from destroyed containers only)
+    keep_nets="$active_nets $retained_nets"
     for existing_net in $(docker network ls --filter "name=caddy_net_" --format '{{.Name}}'); do
-        case " $active_nets " in
+        case " $keep_nets " in
             *" $existing_net "*) ;;
             *)
                 echo "[caddy_compose] Cleaning up stale network: $existing_net"

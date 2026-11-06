@@ -15,7 +15,8 @@ A small controller container that dynamically runs and configures [Caddy](https:
   ```
 
 - Every snippet is validated with `caddy validate` before use. Invalid snippets are logged and skipped.
-- Caddy only runs while at least one valid snippet exists. When none remain, the Caddy container and all managed networks are removed.
+- Caddy only runs while at least one valid snippet exists. When none remain, the Caddy container is removed and unused managed networks are cleaned up.
+- A managed network `caddy_net_<container>` is retained while its container still exists, even if it is stopped. It is only removed once the container is destroyed (or no longer retains the network).
 - For each valid container, a dedicated network `caddy_net_<container>` is created (unless opted out). Both the container (with its name as an alias) and Caddy are connected to it.
 - If the configuration or volume mounts change while Caddy is already running, Caddy is reloaded or rebuilt as needed.
 
